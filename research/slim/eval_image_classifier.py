@@ -111,7 +111,8 @@ def main(_):
         dataset,
         shuffle=False,
         common_queue_capacity=2 * FLAGS.batch_size,
-        common_queue_min=FLAGS.batch_size)
+        common_queue_min=FLAGS.batch_size,
+          reader_kwargs = {'name':'Cdiscount','options':tf.python_io.TFRecordOptions(2)})
     [image, label] = provider.get(['image', 'label'])
     label -= FLAGS.labels_offset
 
