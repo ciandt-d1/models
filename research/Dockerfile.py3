@@ -1,7 +1,7 @@
 FROM tensorflow/tensorflow:1.3.0-py3
 
 RUN apt-get update \
-    && apt-get install -y protobuf-compiler
+    && apt-get install -y python3-tk protobuf-compiler
 
 COPY . /tensorflow/models
 
