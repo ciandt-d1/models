@@ -26,11 +26,13 @@ from __future__ import print_function
 import argparse
 import os
 
-import tensorflow as tf
+import tensorflow as tf  # pylint: disable=g-bad-import-order
 
-from official.utils.arg_parsers import parsers  # pylint: disable=g-bad-import-order
-from official.utils.logging import hooks_helper
 from official.resnet import resnet_model
+from official.utils.arg_parsers import parsers
+from official.utils.export import export
+from official.utils.logging import hooks_helper
+from official.utils.logging import logger
 
 
 ################################################################################
@@ -39,8 +41,7 @@ from official.resnet import resnet_model
 def process_record_dataset(dataset, is_training, batch_size, shuffle_buffer,
                            parse_record_fn, num_epochs=1, num_parallel_calls=1,
                            examples_per_epoch=0, multi_gpu=False):
-  """Given a Dataset with raw records, parse each record into images and labels,
-  and return an iterator over the records.
+  """Given a Dataset with raw records, return an iterator over the records.
 
   Args:
     dataset: A Dataset representing raw records
@@ -121,7 +122,7 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
     An input_fn that can be used in place of a real one to return a dataset
     that can be used for iteration.
   """
-  def input_fn(is_training, data_dir, batch_size, *args):
+  def input_fn(is_training, data_dir, batch_size, *args):  # pylint: disable=unused-argument
     images = tf.zeros((batch_size, height, width, num_channels), tf.float32)
     labels = tf.zeros((batch_size, num_classes), tf.int32)
     return tf.data.Dataset.from_tensors((images, labels)).repeat()
@@ -219,7 +220,13 @@ def resnet_model_fn(features, labels, mode, model_class,
   }
 
   if mode == tf.estimator.ModeKeys.PREDICT:
-    return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+    # Return the predictions and the specification for serving a SavedModel
+    return tf.estimator.EstimatorSpec(
+        mode=mode,
+        predictions=predictions,
+        export_outputs={
+            'predict': tf.estimator.export.PredictOutput(predictions)
+        })
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
   cross_entropy = tf.losses.softmax_cross_entropy(
@@ -231,14 +238,16 @@ def resnet_model_fn(features, labels, mode, model_class,
 
   # If no loss_filter_fn is passed, assume we want the default behavior,
   # which is that batch_normalization variables are excluded from loss.
-  if not loss_filter_fn:
-    def loss_filter_fn(name):
-      return 'batch_normalization' not in name
+  def exclude_batch_norm(name):
+    return 'batch_normalization' not in name
+  loss_filter_fn = loss_filter_fn or exclude_batch_norm
 
   # Add weight decay to the loss.
-  loss = cross_entropy + weight_decay * tf.add_n(
+  l2_loss = weight_decay * tf.add_n(
       [tf.nn.l2_loss(v) for v in tf.trainable_variables()
        if loss_filter_fn(v.name)])
+  tf.summary.scalar('l2_loss', l2_loss)
+  loss = cross_entropy + l2_loss
 
   if mode == tf.estimator.ModeKeys.TRAIN:
     global_step = tf.train.get_or_create_global_step()
@@ -279,31 +288,50 @@ def resnet_model_fn(features, labels, mode, model_class,
 
 
 def validate_batch_size_for_multi_gpu(batch_size):
-  """For multi-gpu, batch-size must be a multiple of the number of
-  available GPUs.
+  """For multi-gpu, batch-size must be a multiple of the number of GPUs.
 
   Note that this should eventually be handled by replicate_model_fn
   directly. Multi-GPU support is currently experimental, however,
   so doing the work here until that feature is in place.
+
+  Args:
+    batch_size: the number of examples processed in each training batch.
+
+  Raises:
+    ValueError: if no GPUs are found, or selected batch_size is invalid.
   """
-  from tensorflow.python.client import device_lib
+  from tensorflow.python.client import device_lib  # pylint: disable=g-import-not-at-top
 
   local_device_protos = device_lib.list_local_devices()
   num_gpus = sum([1 for d in local_device_protos if d.device_type == 'GPU'])
   if not num_gpus:
     raise ValueError('Multi-GPU mode was specified, but no GPUs '
-      'were found. To use CPU, run without --multi_gpu.')
+                     'were found. To use CPU, run without --multi_gpu.')
 
   remainder = batch_size % num_gpus
   if remainder:
     err = ('When running with multiple GPUs, batch size '
-      'must be a multiple of the number of available GPUs. '
-      'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
-      ).format(num_gpus, batch_size, batch_size - remainder)
+           'must be a multiple of the number of available GPUs. '
+           'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
+          ).format(num_gpus, batch_size, batch_size - remainder)
     raise ValueError(err)
 
 
-def resnet_main(flags, model_function, input_function):
+def resnet_main(flags, model_function, input_function, shape=None):
+  """Shared main loop for ResNet Models.
+
+  Args:
+    flags: FLAGS object that contains the params for running. See
+      ResnetArgParser for created flags.
+    model_function: the function that instantiates the Model and builds the
+      ops for train/eval. This will be passed directly into the estimator.
+    input_function: the function that processes the dataset and returns a
+      dataset that the estimator can train on. This will be wrapped with
+      all the relevant flags for running and passed to estimator.
+    shape: list of ints representing the shape of the images used for training.
+      This is only used if flags.export_dir is passed.
+  """
+
   # Using the Winograd non-fused algorithms provides a small performance boost.
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
@@ -339,15 +367,24 @@ def resnet_main(flags, model_function, input_function):
           'version': flags.version,
       })
 
-  for _ in range(flags.train_epochs // flags.epochs_per_eval):
-    train_hooks = hooks_helper.get_train_hooks(flags.hooks, batch_size=flags.batch_size)
+  if flags.benchmark_log_dir is not None:
+    benchmark_logger = logger.BenchmarkLogger(flags.benchmark_log_dir)
+    benchmark_logger.log_run_info("resnet")
+  else:
+    benchmark_logger = None
+
+  for _ in range(flags.train_epochs // flags.epochs_between_evals):
+    train_hooks = hooks_helper.get_train_hooks(
+        flags.hooks,
+        batch_size=flags.batch_size,
+        benchmark_log_dir=flags.benchmark_log_dir)
 
     print('Starting a training cycle.')
 
     def input_fn_train():
       return input_function(True, flags.data_dir, flags.batch_size,
-                            flags.epochs_per_eval, flags.num_parallel_calls,
-                            flags.multi_gpu)
+                            flags.epochs_between_evals,
+                            flags.num_parallel_calls, flags.multi_gpu)
 
     classifier.train(input_fn=input_fn_train, hooks=train_hooks,
                      max_steps=flags.max_train_steps)
@@ -368,22 +405,44 @@ def resnet_main(flags, model_function, input_function):
                                        steps=flags.max_train_steps)
     print(eval_results)
 
+    if benchmark_logger:
+      benchmark_logger.log_estimator_evaluation_result(eval_results)
+
+  if flags.export_dir is not None:
+    warn_on_multi_gpu_export(flags.multi_gpu)
+
+    # Exports a saved model for the given classifier.
+    input_receiver_fn = export.build_tensor_serving_input_receiver_fn(
+        shape, batch_size=flags.batch_size)
+    classifier.export_savedmodel(flags.export_dir, input_receiver_fn)
+
+
+def warn_on_multi_gpu_export(multi_gpu=False):
+  """For the time being, multi-GPU mode does not play nicely with exporting."""
+  if multi_gpu:
+    tf.logging.warning(
+        'You are exporting a SavedModel while in multi-GPU mode. Note that '
+        'the resulting SavedModel will require the same GPUs be available.'
+        'If you wish to serve the SavedModel from a different device, '
+        'try exporting the SavedModel with multi-GPU mode turned off.')
+
 
 class ResnetArgParser(argparse.ArgumentParser):
-  """Arguments for configuring and running a Resnet Model.
-  """
+  """Arguments for configuring and running a Resnet Model."""
 
   def __init__(self, resnet_size_choices=None):
     super(ResnetArgParser, self).__init__(parents=[
         parsers.BaseParser(),
         parsers.PerformanceParser(),
         parsers.ImageModelParser(),
+        parsers.ExportParser(),
+        parsers.BenchmarkParser(),
     ])
 
     self.add_argument(
         '--version', '-v', type=int, choices=[1, 2],
         default=resnet_model.DEFAULT_VERSION,
-        help="Version of ResNet. (1 or 2) See README.md for details."
+        help='Version of ResNet. (1 or 2) See README.md for details.'
     )
 
     self.add_argument(

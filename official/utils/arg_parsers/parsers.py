@@ -46,11 +46,11 @@ Notes about add_argument():
     The metavar variable determines how the flag will appear in help text. If
   not specified, the convention is to use name.upper(). Thus rather than:
 
-    --application_specific_arg APPLICATION_SPECIFIC_ARG, -asa APPLICATION_SPECIFIC_ARG
+    --app_specific_arg APP_SPECIFIC_ARG, -asa APP_SPECIFIC_ARG
 
   if metavar="<ASA>" is set, the user sees:
 
-    --application_specific_arg <ASA>, -asa <ASA>
+    --app_specific_arg <ASA>, -asa <ASA>
 
 """
 
@@ -70,14 +70,14 @@ class BaseParser(argparse.ArgumentParser):
     data_dir: Create a flag for specifying the input data directory.
     model_dir: Create a flag for specifying the model file directory.
     train_epochs: Create a flag to specify the number of training epochs.
-    epochs_per_eval: Create a flag to specify the frequency of testing.
+    epochs_between_evals: Create a flag to specify the frequency of testing.
     batch_size: Create a flag to specify the batch size.
     multi_gpu: Create a flag to allow the use of all available GPUs.
     hooks: Create a flag to specify hooks for logging.
   """
 
   def __init__(self, add_help=False, data_dir=True, model_dir=True,
-               train_epochs=True, epochs_per_eval=True, batch_size=True,
+               train_epochs=True, epochs_between_evals=True, batch_size=True,
                multi_gpu=True, hooks=True):
     super(BaseParser, self).__init__(add_help=add_help)
 
@@ -91,7 +91,8 @@ class BaseParser(argparse.ArgumentParser):
     if model_dir:
       self.add_argument(
           "--model_dir", "-md", default="/tmp",
-          help="[default: %(default)s] The location of the model files.",
+          help="[default: %(default)s] The location of the model checkpoint "
+               "files.",
           metavar="<MD>",
       )
 
@@ -102,12 +103,12 @@ class BaseParser(argparse.ArgumentParser):
           metavar="<TE>"
       )
 
-    if epochs_per_eval:
+    if epochs_between_evals:
       self.add_argument(
-          "--epochs_per_eval", "-epe", type=int, default=1,
+          "--epochs_between_evals", "-ebe", type=int, default=1,
           help="[default: %(default)s] The number of training epochs to run "
                "between evaluations.",
-          metavar="<EPE>"
+          metavar="<EBE>"
       )
 
     if batch_size:
@@ -130,7 +131,7 @@ class BaseParser(argparse.ArgumentParser):
                "of train hooks. "
                "Example: --hooks LoggingTensorHook ExamplesPerSecondHook. "
                "Allowed hook names (case-insensitive): LoggingTensorHook, "
-               "ProfilerHook, ExamplesPerSecondHook. "
+               "ProfilerHook, ExamplesPerSecondHook, LoggingMetricHook."
                "See official.utils.logging.hooks_helper for details.",
           metavar="<HK>"
       )
@@ -214,10 +215,79 @@ class ImageModelParser(argparse.ArgumentParser):
     if data_format:
       self.add_argument(
           "--data_format", "-df",
+          default=None,
+          choices=["channels_first", "channels_last"],
           help="A flag to override the data format used in the model. "
                "channels_first provides a performance boost on GPU but is not "
                "always compatible with CPU. If left unspecified, the data "
                "format will be chosen automatically based on whether TensorFlow"
                "was built for CPU or GPU.",
           metavar="<CF>"
+      )
+
+
+class ExportParser(argparse.ArgumentParser):
+  """Parsing options for exporting saved models or other graph defs.
+
+  This is a separate parser for now, but should be made part of BaseParser
+  once all models are brought up to speed.
+
+  Args:
+    add_help: Create the "--help" flag. False if class instance is a parent.
+    export_dir: Create a flag to specify where a SavedModel should be exported.
+  """
+
+  def __init__(self, add_help=False, export_dir=True):
+    super(ExportParser, self).__init__(add_help=add_help)
+    if export_dir:
+      self.add_argument(
+          "--export_dir", "-ed",
+          help="[default: %(default)s] If set, a SavedModel serialization of "
+               "the model will be exported to this directory at the end of "
+               "training. See the README for more details and relevant links.",
+          metavar="<ED>"
+      )
+
+
+class BenchmarkParser(argparse.ArgumentParser):
+  """Default parser for benchmark logging.
+
+  Args:
+    add_help: Create the "--help" flag. False if class instance is a parent.
+    benchmark_log_dir: Create a flag to specify location for benchmark logging.
+  """
+
+  def __init__(self, add_help=False, benchmark_log_dir=True,
+               bigquery_uploader=True):
+    super(BenchmarkParser, self).__init__(add_help=add_help)
+    if benchmark_log_dir:
+      self.add_argument(
+          "--benchmark_log_dir", "-bld", default=None,
+          help="[default: %(default)s] The location of the benchmark logging.",
+          metavar="<BLD>"
+      )
+    if bigquery_uploader:
+      self.add_argument(
+          "--gcp_project", "-gp", default=None,
+          help="[default: %(default)s] The GCP project name where the benchmark"
+               " will be uploaded.",
+          metavar="<GP>"
+      )
+      self.add_argument(
+          "--bigquery_data_set", "-bds", default="test_benchmark",
+          help="[default: %(default)s] The Bigquery dataset name where the"
+               " benchmark will be uploaded.",
+          metavar="<BDS>"
+      )
+      self.add_argument(
+          "--bigquery_run_table", "-brt", default="benchmark_run",
+          help="[default: %(default)s] The Bigquery table name where the"
+               " benchmark run information will be uploaded.",
+          metavar="<BRT>"
+      )
+      self.add_argument(
+          "--bigquery_metric_table", "-bmt", default="benchmark_metric",
+          help="[default: %(default)s] The Bigquery table name where the"
+               " benchmark metric information will be uploaded.",
+          metavar="<BMT>"
       )

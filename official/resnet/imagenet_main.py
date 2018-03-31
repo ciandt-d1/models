@@ -21,7 +21,7 @@ from __future__ import print_function
 import os
 import sys
 
-import tensorflow as tf
+import tensorflow as tf  # pylint: disable=g-bad-import-order
 
 from official.resnet import imagenet_preprocessing
 from official.resnet import resnet_model
@@ -157,6 +157,7 @@ def parse_record(raw_record, is_training):
 def input_fn(is_training, data_dir, batch_size, num_epochs=1,
              num_parallel_calls=1, multi_gpu=False):
   """Input function which provides batches for train or eval.
+
   Args:
     is_training: A boolean denoting whether the input is for training.
     data_dir: The directory containing the input data.
@@ -192,16 +193,17 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1,
 
 def get_synth_input_fn():
   return resnet_run_loop.get_synth_input_fn(
-        _DEFAULT_IMAGE_SIZE, _DEFAULT_IMAGE_SIZE, _NUM_CHANNELS, _NUM_CLASSES)
+      _DEFAULT_IMAGE_SIZE, _DEFAULT_IMAGE_SIZE, _NUM_CHANNELS, _NUM_CLASSES)
 
 
 ###############################################################################
 # Running the model
 ###############################################################################
 class ImagenetModel(resnet_model.Model):
+  """Model class with appropriate defaults for Imagenet data."""
 
   def __init__(self, resnet_size, data_format=None, num_classes=_NUM_CLASSES,
-    version=resnet_model.DEFAULT_VERSION):
+               version=resnet_model.DEFAULT_VERSION):
     """These are the parameters that work for Imagenet data.
 
     Args:
@@ -241,9 +243,20 @@ class ImagenetModel(resnet_model.Model):
 
 
 def _get_block_sizes(resnet_size):
-  """The number of block layers used for the Resnet model varies according
+  """Retrieve the size of each block_layer in the ResNet model.
+
+  The number of block layers used for the Resnet model varies according
   to the size of the model. This helper grabs the layer set we want, throwing
   an error if a non-standard size has been selected.
+
+  Args:
+    resnet_size: The number of convolutional layers needed in the model.
+
+  Returns:
+    A list of block sizes to use in building the model.
+
+  Raises:
+    KeyError: if invalid resnet_size is received.
   """
   choices = {
       18: [2, 2, 2, 2],
@@ -284,12 +297,20 @@ def imagenet_model_fn(features, labels, mode, params):
 def main(argv):
   parser = resnet_run_loop.ResnetArgParser(
       resnet_size_choices=[18, 34, 50, 101, 152, 200])
+
+  parser.set_defaults(
+      train_epochs=100
+  )
+
   flags = parser.parse_args(args=argv[1:])
 
   input_function = flags.use_synthetic_data and get_synth_input_fn() or input_fn
-  resnet_run_loop.resnet_main(flags, imagenet_model_fn, input_function)
+
+  resnet_run_loop.resnet_main(
+      flags, imagenet_model_fn, input_function,
+      shape=[_DEFAULT_IMAGE_SIZE, _DEFAULT_IMAGE_SIZE, _NUM_CHANNELS])
 
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)
-  tf.app.run(argv=sys.argv)
+  main(argv=sys.argv)
