@@ -4,15 +4,17 @@
 
 Tensorflow Object Detection API depends on the following libraries:
 
-* Protobuf 2.6
-* Python-tk
-* Pillow 1.0
-* lxml
-* tf Slim (which is included in the "tensorflow/models/research/" checkout)
-* Jupyter notebook
-* Matplotlib
-* Tensorflow
-* cocoapi
+*   Protobuf 3.0.0
+*   Python-tk
+*   Pillow 1.0
+*   lxml
+*   tf Slim (which is included in the "tensorflow/models/research/" checkout)
+*   Jupyter notebook
+*   Matplotlib
+*   Tensorflow
+*   Cython
+*   contextlib2
+*   cocoapi
 
 For detailed steps to install Tensorflow, follow the [Tensorflow installation
 instructions](https://www.tensorflow.org/install/). A typical user can install
@@ -29,18 +31,27 @@ The remaining libraries can be installed on Ubuntu 16.04 using via apt-get:
 
 ``` bash
 sudo apt-get install protobuf-compiler python-pil python-lxml python-tk
-sudo pip install jupyter
-sudo pip install matplotlib
+pip install --user Cython
+pip install --user contextlib2
+pip install --user jupyter
+pip install --user matplotlib
 ```
 
 Alternatively, users can install dependencies using pip:
 
 ``` bash
-sudo pip install pillow
-sudo pip install lxml
-sudo pip install jupyter
-sudo pip install matplotlib
+pip install --user Cython
+pip install --user contextlib2
+pip install --user pillow
+pip install --user lxml
+pip install --user jupyter
+pip install --user matplotlib
 ```
+
+Note that sometimes "sudo apt-get install protobuf-compiler" will install
+Protobuf 3+ versions for you and some users have issues when using 3.5.
+If that is your case, you're suggested to download and install Protobuf 3.0.0
+(available [here](https://github.com/google/protobuf/releases/tag/v3.0.0)).
 
 ## COCO API installation
 
@@ -88,7 +99,8 @@ export PYTHONPATH=$PYTHONPATH:`pwd`:`pwd`/slim
 
 Note: This command needs to run from every new terminal you start. If you wish
 to avoid running this manually, you can add it as a new line to the end of your
-~/.bashrc file.
+~/.bashrc file, replacing \`pwd\` with the absolute path of
+tensorflow/models/research on your system.
 
 # Testing the Installation
 

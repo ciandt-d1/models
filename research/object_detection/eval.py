@@ -49,9 +49,9 @@ import tensorflow as tf
 
 from object_detection import evaluator
 from object_detection.builders import dataset_builder
+from object_detection.builders import graph_rewriter_builder
 from object_detection.builders import model_builder
 from object_detection.utils import config_util
-from object_detection.utils import dataset_util
 from object_detection.utils import label_map_util
 
 
@@ -114,7 +114,7 @@ def main(unused_argv):
       is_training=False)
 
   def get_next(config):
-    return dataset_util.make_initializable_iterator(
+    return dataset_builder.make_initializable_iterator(
         dataset_builder.build(config)).get_next()
 
   create_input_dict_fn = functools.partial(get_next, input_config)
@@ -127,8 +127,19 @@ def main(unused_argv):
   if FLAGS.run_once:
     eval_config.max_evals = 1
 
-  evaluator.evaluate(create_input_dict_fn, model_fn, eval_config, categories,
-                     FLAGS.checkpoint_dir, FLAGS.eval_dir)
+  graph_rewriter_fn = None
+  if 'graph_rewriter_config' in configs:
+    graph_rewriter_fn = graph_rewriter_builder.build(
+        configs['graph_rewriter_config'], is_training=False)
+
+  evaluator.evaluate(
+      create_input_dict_fn,
+      model_fn,
+      eval_config,
+      categories,
+      FLAGS.checkpoint_dir,
+      FLAGS.eval_dir,
+      graph_hook_fn=graph_rewriter_fn)
 
 
 if __name__ == '__main__':

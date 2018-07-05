@@ -1,7 +1,9 @@
 FROM tensorflow/tensorflow:1.5.0
 
 RUN apt-get update \
-	&& apt-get install -y python-tk protobuf-compiler
+	&& apt-get install -y python-tk protobuf-compiler python-lxml git\
+    && pip install Cython \
+    && pip install git+https://github.com/crowdai/coco.git#subdirectory=PythonAPI
 
 COPY . /tensorflow/models
 

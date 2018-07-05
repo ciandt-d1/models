@@ -8,16 +8,19 @@ ISSUE_TEMPLATE.md
 AUTHORS
 LICENSE
 WORKSPACE
-adv_imagenet_models/
 adversarial_crypto/
 adversarial_text/
+adv_imagenet_models/
+astronet/
 attention_ocr/
 audioset/
 autoencoder/
+brain_coder/
 cognitive_mapping_and_planning/
 compression/
 delf/
 differential_privacy/
+dist/
 domain_adaptation/
 fivo/
 gan/
@@ -25,8 +28,10 @@ im2txt/
 inception/
 learned_optimizer/
 learning_to_remember_rare_events/
+lexnet_nc/
 lfads/
 lm_1b/
+maskgan/
 namignizer/
 neural_gpu/
 neural_programmer/
@@ -37,19 +42,18 @@ qa_kg/
 real_nvp/
 rebar/
 resnet/
+skip_thoughts/
 street/
 swivel/
 syntaxnet/
 tcn/
+tensorrt/
+textsum/
+transformer/
 textsum/
 transformer/
 video_prediction/
-Dockerfile
-skip_thoughts/
-tutorials/
 
-# Byte-compiled / optimized / DLL files
-__pycache__/
 *.py[cod]
 *$py.class
 
